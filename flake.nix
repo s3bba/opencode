@@ -3,10 +3,14 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    bun = {
+      url = "github:s3bba/bun_overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { self, nixpkgs, ... }:
+    { self, nixpkgs, bun, ... }:
     let
       systems = [
         "aarch64-linux"
@@ -14,7 +18,11 @@
         "aarch64-darwin"
         "x86_64-darwin"
       ];
-      forEachSystem = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      pkgsFor = system: import nixpkgs {
+        inherit system;
+        overlays = [ bun.overlays.default ];
+      };
+      forEachSystem = f: nixpkgs.lib.genAttrs systems (system: f (pkgsFor system));
       rev = self.shortRev or self.dirtyShortRev or "dirty";
     in
     {
