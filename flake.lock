@@ -8,11 +8,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1770424686,
-        "narHash": "sha256-qEbx/c5+6BmdPilnCSbY1lGJUlKyww3JPhQfql0ewco=",
+        "lastModified": 1770424871,
+        "narHash": "sha256-43b5O4K6oQ8sYj7Ujw3M8KIZiLUS6LJdDHAoC4Be3Ng=",
         "owner": "s3bba",
         "repo": "bun_overlay",
-        "rev": "b8476dea8b1fa8abfa725b682d031ebd290d3f53",
+        "rev": "23dd14321abd52358bf820eec10e0d8cf57d5a13",
         "type": "github"
       },
       "original": {
