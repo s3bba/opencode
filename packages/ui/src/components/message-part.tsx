@@ -27,8 +27,7 @@ import {
   QuestionInfo,
 } from "@opencode-ai/sdk/v2"
 import { useData } from "../context"
-import { useDiffComponent } from "../context/diff"
-import { useCodeComponent } from "../context/code"
+import { useFileComponent } from "../context/file"
 import { useDialog } from "../context/dialog"
 import { useI18n } from "../context/i18n"
 import { BasicTool } from "./basic-tool"
@@ -93,6 +92,7 @@ export interface MessageProps {
   parts: PartType[]
   showAssistantCopyPartID?: string | null
   interrupted?: boolean
+  queued?: boolean
   showReasoningSummaries?: boolean
 }
 
@@ -250,6 +250,11 @@ export function getToolInfo(tool: string, input: any = {}): ToolInfo {
       return {
         icon: "bubble-5",
         title: i18n.t("ui.tool.questions"),
+      }
+    case "skill":
+      return {
+        icon: "brain",
+        title: input.name || "skill",
       }
     default:
       return {
@@ -464,14 +469,22 @@ function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
   }
 }
 
-function contextToolSummary(parts: ToolPart[]) {
+function contextToolSummary(parts: ToolPart[], i18n: ReturnType<typeof useI18n>) {
   const read = parts.filter((part) => part.tool === "read").length
   const search = parts.filter((part) => part.tool === "glob" || part.tool === "grep").length
   const list = parts.filter((part) => part.tool === "list").length
   return [
-    read ? `${read} ${read === 1 ? "read" : "reads"}` : undefined,
-    search ? `${search} ${search === 1 ? "search" : "searches"}` : undefined,
-    list ? `${list} ${list === 1 ? "list" : "lists"}` : undefined,
+    read
+      ? i18n.t(read === 1 ? "ui.messagePart.context.read.one" : "ui.messagePart.context.read.other", { count: read })
+      : undefined,
+    search
+      ? i18n.t(search === 1 ? "ui.messagePart.context.search.one" : "ui.messagePart.context.search.other", {
+          count: search,
+        })
+      : undefined,
+    list
+      ? i18n.t(list === 1 ? "ui.messagePart.context.list.one" : "ui.messagePart.context.list.other", { count: list })
+      : undefined,
   ].filter((value): value is string => !!value)
 }
 
@@ -488,6 +501,7 @@ export function Message(props: MessageProps) {
             message={userMessage() as UserMessage}
             parts={props.parts}
             interrupted={props.interrupted}
+            queued={props.queued}
           />
         )}
       </Match>
@@ -596,7 +610,7 @@ function ContextToolGroup(props: { parts: ToolPart[]; busy?: boolean }) {
     () =>
       !!props.busy || props.parts.some((part) => part.state.status === "pending" || part.state.status === "running"),
   )
-  const summary = createMemo(() => contextToolSummary(props.parts))
+  const summary = createMemo(() => contextToolSummary(props.parts, i18n))
   const details = createMemo(() => summary().join(", "))
 
   return (
@@ -667,7 +681,12 @@ function ContextToolGroup(props: { parts: ToolPart[]; busy?: boolean }) {
   )
 }
 
-export function UserMessageDisplay(props: { message: UserMessage; parts: PartType[]; interrupted?: boolean }) {
+export function UserMessageDisplay(props: {
+  message: UserMessage
+  parts: PartType[]
+  interrupted?: boolean
+  queued?: boolean
+}) {
   const data = useData()
   const dialog = useDialog()
   const i18n = useI18n()
@@ -747,6 +766,7 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
               <div
                 data-slot="user-message-attachment"
                 data-type={file.mime.startsWith("image/") ? "image" : "file"}
+                data-queued={props.queued ? "" : undefined}
                 onClick={() => {
                   if (file.mime.startsWith("image/") && file.url) {
                     openImagePreview(file.url, file.filename)
@@ -775,9 +795,14 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
       <Show when={text()}>
         <>
           <div data-slot="user-message-body">
-            <div data-slot="user-message-text">
+            <div data-slot="user-message-text" data-queued={props.queued ? "" : undefined}>
               <HighlightedText text={text()} references={inlineFiles()} agents={agents()} />
             </div>
+            <Show when={props.queued}>
+              <div data-slot="user-message-queued-indicator">
+                <TextShimmer text={i18n.t("ui.message.queued")} />
+              </div>
+            </Show>
           </div>
           <div data-slot="user-message-copy-wrapper" data-interrupted={props.interrupted ? "" : undefined}>
             <Show when={metaHead() || metaTail()}>
@@ -980,7 +1005,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                 return (
                   <div style="width: 100%; display: flex; justify-content: flex-end;">
                     <span class="text-13-regular text-text-weak cursor-default">
-                      {i18n.t("ui.tool.questions")} dismissed
+                      {i18n.t("ui.messagePart.questions.dismissed")}
                     </span>
                   </div>
                 )
@@ -1022,6 +1047,21 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
         </Switch>
       </div>
     </Show>
+  )
+}
+
+PART_MAPPING["compaction"] = function CompactionPartDisplay() {
+  const i18n = useI18n()
+  return (
+    <div data-component="compaction-part">
+      <div data-slot="compaction-part-divider">
+        <span data-slot="compaction-part-line" />
+        <span data-slot="compaction-part-label" class="text-12-regular text-text-weak">
+          {i18n.t("ui.messagePart.compaction")}
+        </span>
+        <span data-slot="compaction-part-line" />
+      </div>
+    </div>
   )
 }
 
@@ -1452,7 +1492,7 @@ ToolRegistry.register({
   name: "edit",
   render(props) {
     const i18n = useI18n()
-    const diffComponent = useDiffComponent()
+    const fileComponent = useFileComponent()
     const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, props.input.filePath))
     const path = createMemo(() => props.metadata?.filediff?.file || props.input.filePath || "")
     const filename = () => getFilename(props.input.filePath ?? "")
@@ -1499,7 +1539,8 @@ ToolRegistry.register({
             >
               <div data-component="edit-content">
                 <Dynamic
-                  component={diffComponent}
+                  component={fileComponent}
+                  mode="diff"
                   before={{
                     name: props.metadata?.filediff?.file || props.input.filePath,
                     contents: props.metadata?.filediff?.before || props.input.oldString,
@@ -1523,7 +1564,7 @@ ToolRegistry.register({
   name: "write",
   render(props) {
     const i18n = useI18n()
-    const codeComponent = useCodeComponent()
+    const fileComponent = useFileComponent()
     const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, props.input.filePath))
     const path = createMemo(() => props.input.filePath || "")
     const filename = () => getFilename(props.input.filePath ?? "")
@@ -1561,7 +1602,8 @@ ToolRegistry.register({
             <ToolFileAccordion path={path()}>
               <div data-component="write-content">
                 <Dynamic
-                  component={codeComponent}
+                  component={fileComponent}
+                  mode="text"
                   file={{
                     name: props.input.filePath,
                     contents: props.input.content,
@@ -1595,7 +1637,7 @@ ToolRegistry.register({
   name: "apply_patch",
   render(props) {
     const i18n = useI18n()
-    const diffComponent = useDiffComponent()
+    const fileComponent = useFileComponent()
     const files = createMemo(() => (props.metadata.files ?? []) as ApplyPatchFile[])
     const pending = createMemo(() => props.status === "pending" || props.status === "running")
     const single = createMemo(() => {
@@ -1703,7 +1745,8 @@ ToolRegistry.register({
                             <Show when={visible()}>
                               <div data-component="apply-patch-file-diff">
                                 <Dynamic
-                                  component={diffComponent}
+                                  component={fileComponent}
+                                  mode="diff"
                                   before={{ name: file.filePath, contents: file.before }}
                                   after={{ name: file.movePath ?? file.filePath, contents: file.after }}
                                 />
@@ -1780,7 +1823,8 @@ ToolRegistry.register({
               >
                 <div data-component="apply-patch-file-diff">
                   <Dynamic
-                    component={diffComponent}
+                    component={fileComponent}
+                    mode="diff"
                     before={{ name: file().filePath, contents: file().before }}
                     after={{ name: file().movePath ?? file().filePath, contents: file().after }}
                   />
@@ -1887,5 +1931,27 @@ ToolRegistry.register({
         </Show>
       </BasicTool>
     )
+  },
+})
+
+ToolRegistry.register({
+  name: "skill",
+  render(props) {
+    const title = createMemo(() => props.input.name || "skill")
+    const running = createMemo(() => props.status === "pending" || props.status === "running")
+
+    const titleContent = () => <TextShimmer text={title()} active={running()} />
+
+    const trigger = () => (
+      <div data-slot="basic-tool-tool-info-structured">
+        <div data-slot="basic-tool-tool-info-main">
+          <span data-slot="basic-tool-tool-title" class="capitalize agent-title">
+            {titleContent()}
+          </span>
+        </div>
+      </div>
+    )
+
+    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails />
   },
 })
